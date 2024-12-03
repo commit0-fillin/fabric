@@ -86,7 +86,40 @@ class Transfer:
         .. versionchanged:: 2.6
             Create missing ``local`` directories automatically.
         """
-        pass
+        sftp = self.connection.sftp()
+        remote_path = posixpath.join(sftp.getcwd() or '', remote)
+        remote_basename = posixpath.basename(remote_path)
+        remote_dirname = posixpath.dirname(remote_path)
+
+        if not local:
+            local = os.getcwd()
+
+        if isinstance(local, str):
+            local = local.format(
+                host=self.connection.host,
+                user=self.connection.user,
+                port=self.connection.port,
+                basename=remote_basename,
+                dirname=remote_dirname
+            )
+
+            if os.path.isdir(local):
+                local = os.path.join(local, remote_basename)
+
+            local_dir = os.path.dirname(local)
+            if local_dir:
+                os.makedirs(local_dir, exist_ok=True)
+
+            with open(local, 'wb') as local_file:
+                sftp.getfo(remote_path, local_file)
+
+            if preserve_mode:
+                remote_mode = sftp.stat(remote_path).st_mode
+                os.chmod(local, remote_mode)
+        else:
+            sftp.getfo(remote_path, local)
+
+        return Result(local, local, remote_path, remote, self.connection)
 
     def put(self, local, remote=None, preserve_mode=True):
         """
@@ -134,7 +167,36 @@ class Transfer:
 
         .. versionadded:: 2.0
         """
-        pass
+        sftp = self.connection.sftp()
+
+        if isinstance(local, str):
+            local_path = os.path.expanduser(local)
+            local_basename = os.path.basename(local_path)
+            orig_local = local_path
+
+            if not os.path.isfile(local_path):
+                raise OSError(f"Local file '{local_path}' does not exist")
+
+            if remote is None or remote == '':
+                remote = local_basename
+
+            remote_path = posixpath.join(sftp.getcwd() or '', remote)
+
+            with open(local_path, 'rb') as local_file:
+                sftp.putfo(local_file, remote_path)
+
+            if preserve_mode:
+                local_mode = os.stat(local_path).st_mode
+                sftp.chmod(remote_path, local_mode)
+        else:
+            if remote is None:
+                raise ValueError("'remote' must be specified when 'local' is a file-like object")
+
+            remote_path = posixpath.join(sftp.getcwd() or '', remote)
+            orig_local = local
+            sftp.putfo(local, remote_path)
+
+        return Result(local_path if isinstance(local, str) else None, orig_local, remote_path, remote, self.connection)
 
 class Result:
     """
