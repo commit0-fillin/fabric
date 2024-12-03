@@ -60,7 +60,10 @@ class Command:
 
         .. versionadded:: 2.7
         """
-        pass
+        if self.cmd is not None:
+            channel.exec_command.assert_called_with(self.cmd)
+        if self.in_ is not None:
+            channel.sendall.assert_called_with(self.in_)
 
 class ShellCommand(Command):
     """
@@ -176,7 +179,23 @@ class Session:
 
         .. versionadded:: 2.1
         """
-        pass
+        self.client = Mock()
+        self.channels = []
+        
+        for command in self.commands:
+            channel = MockChannel(stdout=command.out, stderr=command.err)
+            channel.recv_exit_status.return_value = command.exit
+            channel.exit_status_ready.side_effect = chain(repeat(False, command.waits), repeat(True))
+            self.channels.append(channel)
+
+        self.client.get_transport().open_session.side_effect = self.channels
+
+        if self.host:
+            self.client.connect.assert_called_with(self.host, username=self.user, port=self.port)
+
+        if self._enable_sftp:
+            self.sftp_client = Mock()
+            self.client.open_sftp.return_value = self.sftp_client
 
     def stop(self):
         """
@@ -184,7 +203,10 @@ class Session:
 
         .. versionadded:: 3.2
         """
-        pass
+        if hasattr(self, 'client'):
+            self.client.close()
+        if hasattr(self, 'sftp_client'):
+            self.sftp_client.close()
 
 class MockRemote:
     """
@@ -225,7 +247,9 @@ class MockRemote:
 
         .. versionadded:: 2.1
         """
-        pass
+        session = Session(*args, **kwargs, enable_sftp=self._enable_sftp)
+        channels = self.expect_sessions(session)
+        return channels[0] if channels else None
 
     def expect_sessions(self, *sessions):
         """
@@ -235,7 +259,9 @@ class MockRemote:
 
         .. versionadded:: 2.1
         """
-        pass
+        self.sessions = sessions
+        self.stop()
+        return self.start()
 
     def start(self):
         """
@@ -243,7 +269,20 @@ class MockRemote:
 
         .. versionadded:: 2.1
         """
-        pass
+        self.patcher = patch('fabric.connection.SSHClient', spec=True)
+        MockSSHClient = self.patcher.start()
+        self.clients = []
+        channels = []
+
+        for session in self.sessions:
+            client = MockSSHClient.return_value
+            session.generate_mocks()
+            client.get_transport = session.client.get_transport
+            client.open_sftp = session.client.open_sftp
+            self.clients.append(client)
+            channels.extend(session.channels)
+
+        return channels
 
     def stop(self):
         """
@@ -251,7 +290,10 @@ class MockRemote:
 
         .. versionadded:: 2.1
         """
-        pass
+        if hasattr(self, 'patcher'):
+            self.patcher.stop()
+        for session in getattr(self, 'sessions', []):
+            session.stop()
 
     @deprecated(version='3.2', reason='This method has been renamed to `safety` & will be removed in 4.0')
     def sanity(self):
@@ -260,7 +302,7 @@ class MockRemote:
 
         .. versionadded:: 2.1
         """
-        pass
+        self.safety()
 
     def safety(self):
         """
@@ -268,7 +310,15 @@ class MockRemote:
 
         .. versionadded:: 3.2
         """
-        pass
+        for session, client in zip(self.sessions, self.clients):
+            if not session.guard_only:
+                client.connect.assert_called_once()
+            for channel, command in zip(session.channels, session.commands):
+                command.expect_execution(channel)
+            if session._enable_sftp and session.transfers:
+                for transfer in session.transfers:
+                    method = getattr(session.sftp_client, transfer['method'])
+                    method.assert_called_once_with(**{k: v for k, v in transfer.items() if k != 'method'})
 
     def __enter__(self):
         return self
