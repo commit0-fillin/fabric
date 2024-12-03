@@ -86,7 +86,9 @@ class Group(list):
 
         .. versionadded:: 2.0
         """
-        pass
+        group = cls()
+        group.extend(connections)
+        return group
 
     def run(self, *args, **kwargs):
         """
@@ -96,7 +98,15 @@ class Group(list):
 
         .. versionadded:: 2.0
         """
-        pass
+        results = GroupResult()
+        for connection in self:
+            try:
+                results[connection] = connection.run(*args, **kwargs)
+            except Exception as e:
+                results[connection] = e
+        if any(isinstance(result, Exception) for result in results.values()):
+            raise GroupException(results)
+        return results
 
     def sudo(self, *args, **kwargs):
         """
@@ -106,7 +116,15 @@ class Group(list):
 
         .. versionadded:: 2.6
         """
-        pass
+        results = GroupResult()
+        for connection in self:
+            try:
+                results[connection] = connection.sudo(*args, **kwargs)
+            except Exception as e:
+                results[connection] = e
+        if any(isinstance(result, Exception) for result in results.values()):
+            raise GroupException(results)
+        return results
 
     def put(self, *args, **kwargs):
         """
@@ -122,7 +140,15 @@ class Group(list):
 
         .. versionadded:: 2.6
         """
-        pass
+        results = GroupResult()
+        for connection in self:
+            try:
+                results[connection] = connection.put(*args, **kwargs)
+            except Exception as e:
+                results[connection] = e
+        if any(isinstance(result, Exception) for result in results.values()):
+            raise GroupException(results)
+        return results
 
     def get(self, *args, **kwargs):
         """
@@ -149,7 +175,17 @@ class Group(list):
 
         .. versionadded:: 2.6
         """
-        pass
+        results = GroupResult()
+        for connection in self:
+            try:
+                if 'local' not in kwargs:
+                    kwargs['local'] = f"{connection.host}/"
+                results[connection] = connection.get(*args, **kwargs)
+            except Exception as e:
+                results[connection] = e
+        if any(isinstance(result, Exception) for result in results.values()):
+            raise GroupException(results)
+        return results
 
     def close(self):
         """
@@ -157,7 +193,8 @@ class Group(list):
 
         .. versionadded:: 2.4
         """
-        pass
+        for connection in self:
+            connection.close()
 
     def __enter__(self):
         return self
@@ -212,7 +249,7 @@ class GroupResult(dict):
 
         .. versionadded:: 2.0
         """
-        pass
+        return {k: v for k, v in self.items() if not isinstance(v, Exception)}
 
     @property
     def failed(self):
@@ -221,4 +258,4 @@ class GroupResult(dict):
 
         .. versionadded:: 2.0
         """
-        pass
+        return {k: v for k, v in self.items() if isinstance(v, Exception)}
