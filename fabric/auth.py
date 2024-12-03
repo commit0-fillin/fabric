@@ -53,4 +53,6 @@ class OpenSSHAuthStrategy(AuthStrategy):
         """
         Shut down any resources we ourselves opened up.
         """
-        pass
+        if self.agent:
+            self.agent.close()
+        super().close()
