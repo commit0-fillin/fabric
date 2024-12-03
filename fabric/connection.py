@@ -125,7 +125,11 @@ class Connection(Context):
 
         .. versionadded:: 2.4
         """
-        pass
+        if not isinstance(env, dict):
+            raise InvalidV1Env("The 'env' parameter must be a dictionary")
+
+        config = Config.from_v1(env)
+        return cls(config=config, **kwargs)
 
     def __init__(self, host, user=None, port=None, config=None, gateway=None, forward_agent=None, connect_timeout=None, connect_kwargs=None, inline_ssh_env=None):
         """
@@ -355,7 +359,7 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        return self.transport is not None and self.transport.is_active()
 
     def open(self):
         """
@@ -380,7 +384,26 @@ class Connection(Context):
             Now returns the inner Paramiko connect call's return value instead
             of always returning the implicit ``None``.
         """
-        pass
+        if self.is_connected:
+            return None
+
+        if self.gateway:
+            sock = self.open_gateway()
+        else:
+            sock = None
+
+        connect_kwargs = self.connect_kwargs.copy()
+        connect_kwargs.update({
+            'hostname': self.host,
+            'port': self.port,
+            'username': self.user,
+            'timeout': self.connect_timeout,
+            'sock': sock,
+        })
+
+        result = self.client.connect(**connect_kwargs)
+        self.transport = self.client.get_transport()
+        return result
 
     def open_gateway(self):
         """
@@ -393,7 +416,17 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        if isinstance(self.gateway, Connection):
+            self.gateway.open()
+            return self.gateway.transport.open_channel(
+                'direct-tcpip',
+                (self.host, self.port),
+                ('', 0)
+            )
+        elif isinstance(self.gateway, str):
+            return ProxyCommand(self.gateway)
+        else:
+            raise ValueError("Unsupported gateway type")
 
     def close(self):
         """
@@ -407,7 +440,16 @@ class Connection(Context):
         .. versionchanged:: 3.0
             Now closes SFTP sessions too (2.x required manually doing so).
         """
-        pass
+        if self._sftp:
+            self._sftp.close()
+            self._sftp = None
+
+        if self.transport:
+            self.transport.close()
+            self.transport = None
+
+        if self.client:
+            self.client.close()
 
     def __enter__(self):
         return self
@@ -430,7 +472,8 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        runner = Remote(context=self, **kwargs)
+        return runner.run(command)
 
     @opens
     def sudo(self, command, **kwargs):
@@ -444,7 +487,8 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        runner = Remote(context=self, **kwargs)
+        return runner.sudo(command)
 
     @opens
     def shell(self, **kwargs):
@@ -506,7 +550,8 @@ class Connection(Context):
 
         .. versionadded:: 2.7
         """
-        pass
+        runner = RemoteShell(context=self, **kwargs)
+        return runner.run()
 
     def local(self, *args, **kwargs):
         """
@@ -517,7 +562,7 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        return super().run(*args, **kwargs)
 
     @opens
     def sftp(self):
@@ -531,7 +576,9 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        if self._sftp is None:
+            self._sftp = self.transport.open_sftp_client()
+        return self._sftp
 
     def get(self, *args, **kwargs):
         """
@@ -542,7 +589,7 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        return Transfer(self).get(*args, **kwargs)
 
     def put(self, *args, **kwargs):
         """
@@ -553,7 +600,7 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        return Transfer(self).put(*args, **kwargs)
 
     @contextmanager
     @opens
@@ -598,7 +645,21 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        if remote_port is None:
+            remote_port = local_port
+
+        transport = self.transport
+        finished = Event()
+        tunnel_manager = TunnelManager(
+            local_host, local_port, remote_host, remote_port, transport, finished
+        )
+        tunnel_manager.start()
+
+        try:
+            yield
+        finally:
+            finished.set()
+            tunnel_manager.join()
 
     @contextmanager
     @opens
@@ -647,4 +708,18 @@ class Connection(Context):
 
         .. versionadded:: 2.0
         """
-        pass
+        if local_port is None:
+            local_port = remote_port
+
+        transport = self.transport
+        finished = Event()
+        tunnel_manager = TunnelManager(
+            remote_host, remote_port, local_host, local_port, transport, finished
+        )
+        tunnel_manager.start()
+
+        try:
+            yield
+        finally:
+            finished.set()
+            tunnel_manager.join()
