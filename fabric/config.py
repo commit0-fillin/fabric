@@ -59,7 +59,41 @@ class Config(InvokeConfig):
 
         .. versionadded:: 2.4
         """
-        pass
+        overrides = kwargs.pop('overrides', {})
+        
+        # Map Fabric 1 env vars to Fabric 2 config
+        config_map = {
+            'user': 'user',
+            'host_string': 'host',
+            'port': 'port',
+            'key_filename': 'connect_kwargs.key_filename',
+            'password': 'connect_kwargs.password',
+            'use_ssh_config': 'ssh_config',
+            'timeout': 'timeouts.connect',
+            'command_timeout': 'timeouts.command',
+            'forward_agent': 'forward_agent',
+            'gateway': 'gateway',
+            'warn_only': 'run.warn',
+            'shell': 'run.shell',
+            'pty': 'run.pty',
+            'combine_stderr': 'run.combine_stderr',
+            'echo': 'run.echo',
+        }
+        
+        new_config = {}
+        for v1_key, v2_key in config_map.items():
+            if v1_key in env:
+                keys = v2_key.split('.')
+                current = new_config
+                for key in keys[:-1]:
+                    current = current.setdefault(key, {})
+                current[keys[-1]] = env[v1_key]
+        
+        # Merge with user-supplied overrides
+        merged = merge_dicts(new_config, overrides)
+        
+        # Create and return new Config instance
+        return cls(**kwargs, overrides=merged)
 
     def __init__(self, *args, **kwargs):
         """
@@ -116,7 +150,7 @@ class Config(InvokeConfig):
 
         .. versionadded:: 2.0
         """
-        pass
+        self._set(_runtime_ssh_path=path)
 
     def load_ssh_config(self):
         """
@@ -127,7 +161,11 @@ class Config(InvokeConfig):
 
         .. versionadded:: 2.0
         """
-        pass
+        if self._runtime_ssh_path is not None:
+            self.set_runtime_ssh_path(self._runtime_ssh_path)
+        
+        if not self._given_explicit_object:
+            self._load_ssh_files()
 
     def _load_ssh_files(self):
         """
@@ -138,7 +176,11 @@ class Config(InvokeConfig):
 
         :returns: ``None``.
         """
-        pass
+        if self._runtime_ssh_path:
+            self._load_ssh_file(self._runtime_ssh_path)
+        else:
+            self._load_ssh_file(self._system_ssh_path)
+            self._load_ssh_file(self._user_ssh_path)
 
     def _load_ssh_file(self, path):
         """
@@ -148,7 +190,12 @@ class Config(InvokeConfig):
 
         :returns: ``None``.
         """
-        pass
+        from os.path import expanduser, isfile
+        
+        expanded_path = expanduser(path)
+        if isfile(expanded_path):
+            with open(expanded_path) as f:
+                self.base_ssh_config.parse(f)
 
     @staticmethod
     def global_defaults():
@@ -168,4 +215,24 @@ class Config(InvokeConfig):
             Added the ``authentication`` settings section, plus sub-attributes
             such as ``authentication.strategy_class``.
         """
-        pass
+        from invoke.config import Config as InvokeConfig
+        
+        defaults = InvokeConfig.global_defaults()
+        fabric_defaults = {
+            'connect_kwargs': {},
+            'forward_agent': False,
+            'gateway': None,
+            'hosts': [],
+            'timeouts': {
+                'connect': None,
+                'command': None,
+            },
+            'ssh_config': True,
+            'authentication': {
+                'strategy_class': None,
+                'identities': [],
+                'key_types': ['rsa', 'dsa', 'ecdsa', 'ed25519'],
+            },
+        }
+        merge_dicts(defaults, fabric_defaults)
+        return defaults
