@@ -42,7 +42,17 @@ def connection():
 
     .. versionadded:: 2.1
     """
-    pass
+    with patch('fabric.connection.Connection') as mock_connection:
+        conn = mock_connection.return_value
+        conn.host = "host"
+        conn.user = "user"
+        conn.run = Mock()
+        conn.local = Mock()
+        conn.sudo = Mock()
+        conn.put = Mock()
+        conn.get = Mock()
+        conn.config.run.in_stream = False
+        yield conn
 cxn = connection
 
 @fixture
@@ -54,7 +64,9 @@ def remote_with_sftp():
     functionality was called), note that the returned `MockRemote` object has a
     ``.sftp`` attribute when created in this mode.
     """
-    pass
+    mock_remote = MockRemote(enable_sftp=True)
+    yield mock_remote
+    mock_remote.stop()
 
 @fixture
 def remote():
@@ -68,7 +80,12 @@ def remote():
 
     .. versionadded:: 2.1
     """
-    pass
+    mock_remote = MockRemote()
+    yield mock_remote
+    try:
+        mock_remote.safety()
+    finally:
+        mock_remote.stop()
 
 @fixture
 def sftp():
@@ -83,7 +100,12 @@ def sftp():
 
     .. versionadded:: 2.1
     """
-    pass
+    with patch('fabric.transfer.os') as mock_os, \
+         patch('fabric.transfer.Transfer') as mock_transfer, \
+         patch('paramiko.sftp_client.SFTPClient') as mock_sftp_client:
+        transfer = mock_transfer.return_value
+        sftp_client = mock_sftp_client.return_value
+        yield transfer, sftp_client, mock_os
 
 @fixture
 def sftp_objs(sftp):
@@ -92,7 +114,8 @@ def sftp_objs(sftp):
 
     .. versionadded:: 2.1
     """
-    pass
+    transfer, sftp_client, _ = sftp
+    yield transfer, sftp_client
 
 @fixture
 def transfer(sftp):
@@ -101,7 +124,8 @@ def transfer(sftp):
 
     .. versionadded:: 2.1
     """
-    pass
+    transfer, _, _ = sftp
+    yield transfer
 
 @fixture
 def client():
@@ -143,4 +167,9 @@ def client():
 
     .. versionadded:: 2.1
     """
-    pass
+    with patch('paramiko.client.SSHClient') as mock_client:
+        client = mock_client.return_value
+        transport = Mock()
+        transport.active = PropertyMock(side_effect=[True, False])
+        client.get_transport.return_value = transport
+        yield client
