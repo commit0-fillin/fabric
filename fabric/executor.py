@@ -37,7 +37,15 @@ class Executor(invoke.Executor):
 
         :returns: Homogenous list of Connection init kwarg dicts.
         """
-        pass
+        normalized = []
+        for host in hosts:
+            if isinstance(host, str):
+                normalized.append({"host": host})
+            elif isinstance(host, dict):
+                normalized.append(host)
+            else:
+                raise ValueError(f"Invalid host specification: {host}")
+        return normalized
 
     def parameterize(self, call, connection_init_kwargs):
         """
@@ -52,4 +60,17 @@ class Executor(invoke.Executor):
         :returns:
             `.ConnectionCall`.
         """
-        pass
+        from .tasks import ConnectionCall
+        
+        # Create a new ConnectionCall object
+        connection_call = ConnectionCall(
+            task=call.task,
+            args=call.args,
+            kwargs=call.kwargs,
+            init_kwargs=connection_init_kwargs
+        )
+        
+        # Set the context of the ConnectionCall to a new Connection
+        connection_call.context = Connection(**connection_init_kwargs)
+        
+        return connection_call
