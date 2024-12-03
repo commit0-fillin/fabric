@@ -11,4 +11,8 @@ def get_local_user():
 
     .. versionadded:: 2.0
     """
-    pass
+    import getpass
+    try:
+        return getpass.getuser()
+    except Exception:
+        return None
