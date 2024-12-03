@@ -12,5 +12,16 @@ from . import __version__ as fabric
 from . import Config, Executor
 
 class Fab(Program):
-    pass
+    def __init__(self, version=None, namespace=None, name=None, binary=None):
+        super().__init__(version=version, namespace=namespace, name=name, binary=binary)
+        self.config = Config()
+
+def make_program():
+    return Fab(
+        version=f"Fabric {fabric} (Invoke {invoke}) (Paramiko {paramiko})",
+        namespace=Collection.from_module(Executor),
+        name="fab",
+        binary="fab",
+    )
+
 program = make_program()
