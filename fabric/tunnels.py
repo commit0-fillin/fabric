@@ -56,4 +56,8 @@ class Tunnel(ExceptionHandlingThread):
 
         .. versionadded:: 2.0
         """
-        pass
+        data = reader.recv(chunk_size)
+        if not data:
+            return True
+        writer.sendall(data)
+        return None
