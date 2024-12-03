@@ -42,7 +42,11 @@ class Remote(Runner):
 
         Sends a window resize command via Paramiko channel method.
         """
-        pass
+        if self.context.client and self.context.client.get_transport():
+            channel = self.context.client.get_transport().open_session()
+            if channel:
+                width, height = pty_size()
+                channel.resize_pty(width=width, height=height)
 
 class RemoteShell(Remote):
     pass
