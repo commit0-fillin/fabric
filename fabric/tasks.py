@@ -60,7 +60,19 @@ def task(*args, **kwargs):
 
     .. versionadded:: 2.1
     """
-    pass
+    hosts = kwargs.pop('hosts', None)
+    
+    def wrapper(func):
+        if hosts:
+            func.hosts = hosts
+        return invoke.task(*args, **kwargs)(func)
+    
+    # If used as @task (no parentheses), the decorated function is passed directly
+    if len(args) == 1 and callable(args[0]):
+        return wrapper(args[0])
+    
+    # If used as @task() or with arguments, return the wrapper function
+    return wrapper
 
 class ConnectionCall(invoke.Call):
     """
