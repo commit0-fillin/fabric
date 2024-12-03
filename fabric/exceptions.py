@@ -9,6 +9,7 @@ class GroupException(Exception):
     """
 
     def __init__(self, result):
+        super().__init__("One or more errors occurred during group execution")
         self.result = result
 
 class InvalidV1Env(Exception):
